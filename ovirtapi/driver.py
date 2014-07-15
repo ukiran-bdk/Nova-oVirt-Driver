@@ -97,7 +97,7 @@ class oVirtDriver(driver.ComputeDriver):
         ovirt_password = CONF.ovirtapi_password
 
         ovirt_uri = "https://" + ovirt_host_name + ":443/api"
-        LOG.debug(" oVirt URL ==> %s " % ovirt_uri)
+        
         if (ovirt_uri or ovirt_username or ovirt_password) is None:
             raise Exception(_("Must specify ovirtapi_uri,"
                               "ovirtapi_username "
@@ -111,42 +111,35 @@ class oVirtDriver(driver.ComputeDriver):
 
     def list_instances(self):
         """List the instances in RHEV-M/oVirt."""
-        #LOG.debug(_("************rhevm - list_instances*************"))
         return self._vmops.list_instances()
 
     def spawn(self, context, instance, image_meta, injected_files,
               admin_password, network_info=None, block_device_info=None):
-        LOG.debug(_("************rhevm - spawn*************"))
         """Create a new instance in RHEVM/oVirt"""
         self._vmops.spawn(context, instance, image_meta, network_info)
 
     def reboot(self, context, instance, network_info, reboot_type,
                block_device_info=None, bad_volumes_callback=None):
-        LOG.debug(_("************rhevm - reboot*************"))
         """Reboot an instance in RHEV-M/oVirt"""
         self._vmops.reboot(instance, network_info)
 
     def destroy(self, instance, network_info, block_device_info=None,
                 destroy_disks=True, context=None):
         """Destroy an instance in RHEV-M/oVirt."""
-        #LOG.debug(_("************rhevm - destroy*************"))
         instance_name = instance['display_name']
         self._vmops.destroy(instance_name, network_info)
 
     def suspend(self, instance):
         """Suspend the specified instance."""
-        #LOG.debug(_("************rhevm - suspend*************"))
         instance_name = instance['display_name']
         self._vmops.suspend(instance_name)
 
     def resume(self, context, instance, network_info, block_device_info=None):
         """Resume the suspended VM instance."""
-        #LOG.debug(_("************rhevm - resume*************"))
         instance_name = instance['display_name']
         self._vmops.resume(instance_name)
 
     def get_info(self, instance):
-        #LOG.debug(_("************rhevm - get_info*************"))
         """Get the current status of an instance, by name (not ID!)
 
         Returns a dict containing:
@@ -225,11 +218,6 @@ class oVirtDriver(driver.ComputeDriver):
     def attach_volume(self, context, connection_info, instance, mountpoint,
                       encryption=None):
         """Attach the disk to the instance at mountpoint using info."""
-        #LOG.debug(_("************rhevm - attach_volume*************"))
-        LOG.info(_("************rhevm - attach_volume*************"))
-        LOG.info(_("*******rhevm -connection_info---->>%s" %connection_info))
-        LOG.info(_("*******rhevm -instance---->>%s" %instance))
-        LOG.info(_("*******rhevm -mountpoint---->>%s" %mountpoint))
         instance_name = instance['display_name']
         data = connection_info['data']
         volume_name = data['volume_name']
@@ -239,12 +227,6 @@ class oVirtDriver(driver.ComputeDriver):
     def detach_volume(self, connection_info, instance, mountpoint,
                       encryption=None):
         """Detach the disk attached to the instance."""
-        LOG.debug(_("************rhevm - detach_volume*************"))
-        LOG.info(_("************rhevm - detach_volume*************"))
-        LOG.info(_("*******rhevm -connection_info---->>%s" %connection_info))
-        LOG.info(_("*******rhevm -instance---->>%s" %instance))
-        LOG.info(_("*******rhevm -mountpoint---->>%s" %mountpoint))
-        
         instance_name = instance['display_name']
         data = connection_info['data']
         volume_name = data['volume_name']
@@ -688,12 +670,10 @@ class oVirtDriver(driver.ComputeDriver):
                 'host': hostname
             }
         """
-        LOG.debug(_("************rhevm - get_volume_connector*************"))
         pass
 
     def get_disk_details(self, cluster_datacenter_id):
-
-        LOG.debug(_("************rhevm - get_disk_details*************"))
+        '''get disk details '''
         disk_used = 0
         disk_available = 0
         disk_total = 0
@@ -725,15 +705,14 @@ class oVirtDriver(driver.ComputeDriver):
         return hypervisor_type
 
     def get_instance_capabilities(self):
-
+        '''get the instance capabilities '''
         instance_cap = list()
         instance_cap = [('i686', 'rhevh', 'hvm', CONF.ovirtapi_host_name), (
             'x86_64', 'rhevh', 'hvm', CONF.ovirtapi_host_name)]
         return instance_cap
 
     def get_cpu_info(self, cluster, cores):
-        
-        #LOG.debug(_("************rhevm - get_cpu_info*************"))
+        '''get the cpu details '''
         cpu_info = dict()
         cpu_info['arch'] = 'x86_64'
         cpuid = cluster.cpu.id
@@ -757,7 +736,7 @@ class oVirtDriver(driver.ComputeDriver):
         return jsonutils.dumps(cpu_info)
 
     def get_ovirtclusterinfo(self, nodename):
-        LOG.debug(_("************rhevm - get_rhevmclusterinfo*************"))
+        '''get the cluster details '''
         detail = {}
 
         cluster_total_memory = 0  # in MB
@@ -809,23 +788,7 @@ class oVirtDriver(driver.ComputeDriver):
         detail["disk_used"] = disk_info["disk_used"]
         detail["disk_available"] = disk_info["disk_available"]
 
-        """
-        LOG.debug(" hypervisor_hostname--->>> %s"
-%detail["hypervisor_hostname"])
-        LOG.debug(" VCPUS--------->>>>  %s" %detail["vcpus"])
-        LOG.debug(" VCPUS_USED--------->>>>  %s" %detail["vcpus_used"])
-        LOG.debug(" CPU_INFO---->>> %s" %detail["cpu_info"])
-        LOG.debug(" host_memory_total---->>> %s" %detail["host_memory_total"])
-        LOG.debug(" host_memory_free---->>> %s" %detail["host_memory_free"])
-        LOG.debug(" hypervisor_type---->>> %s" %detail["hypervisor_type"])
-        LOG.debug(" hypervisor_version---->>> %s"
-%detail["hypervisor_version"])
-        LOG.debug(" supported_instances---->>> %s"
-%detail["supported_instances"])
-        LOG.debug(" disk_total---->>> %s" %detail["disk_total"])
-        LOG.debug(" disk_used---->>> %s" %detail["disk_used"])
-        LOG.debug(" disk_available---->>> %s" %detail["disk_available"])
-        """
+        
         return detail
 
     def get_available_resource(self, nodename):
@@ -837,8 +800,6 @@ class oVirtDriver(driver.ComputeDriver):
         :returns: dictionary describing resources
 
         """
-        #LOG.debug("******************get_available_resources********************")
-
         cluster_detail = self.get_ovirtclusterinfo(nodename)
 
         dic = {'vcpus':  cluster_detail["vcpus"],
@@ -853,22 +814,7 @@ class oVirtDriver(driver.ComputeDriver):
                'local_gb_used': cluster_detail["disk_used"],
                'disk_available_least': cluster_detail["disk_available"]}
 
-        """
-        LOG.debug(" VCPUS--------->>>>  %s" %dic["vcpus"])
-        LOG.debug(" VCPUS_USED--------->>>>  %s" %dic["vcpus_used"])
-        LOG.debug(" CPU_INFO---->>> %s" %dic["cpu_info"])
-        LOG.debug(" memory_mb---->>> %s" %dic["memory_mb"])
-        LOG.debug(" memory_mb_used---->>> %s" %dic["memory_mb_used"])
-        LOG.debug(" local_gb---->>> %s" %dic["local_gb"])
-        LOG.debug(" local_gb_used---->>> %s" %dic["local_gb_used"])
-        LOG.debug(" hypervisor_type---->>> %s" %dic["hypervisor_type"])
-        LOG.debug(" hypervisor_version---->>> %s" %dic["hypervisor_version"])
-        LOG.debug(" hypervisor_hostname--->>> %s" %dic["hypervisor_hostname"])
-        LOG.debug(" disk_available_least---->>%s"
-%dic["disk_available_least"])
-        LOG.debug ("---DIC -- > %s " %dic)
-        """
-
+        
         return dic
 
 
@@ -919,9 +865,6 @@ class HostState(object):
 
     def update_status(self):
         """Retrieve status info from Rhevm/Ovirt"""
-
-        #LOG.debug(_("************update_status *************"))
-        #LOG.debug(("************update_status *************"))
 
         if self.connection is None:
             self.connection = oVirtDriver(self.virtapi, self.read_only)
