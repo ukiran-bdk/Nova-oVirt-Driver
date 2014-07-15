@@ -116,230 +116,42 @@ class oVirtOps(object):
                 'num_cpu': cpu_num,
                 'cpu_time': 0}
 
-    def spawnBackUp(self, context, instance, image_meta, network_info,
-              block_device_info=None):
-        """
-        Creates a VM instance.
-
-        Steps followed are:
-
-        1. Create a VM with no disk and the specifics in the instance object
-           like RAM size.
-        2. For flat disk
-          2.1. Create a dummy vmdk of the size of the disk file that is to be
-               uploaded. This is required just to create the metadata file.
-          2.2. Delete the -flat.vmdk file created in the above step and retain
-               the metadata .vmdk file.
-          2.3. Upload the disk file.
-        3. For sparse disk
-          3.1. Upload the disk file to a -sparse.vmdk file.
-          3.2. Copy/Clone the -sparse.vmdk file to a thin vmdk.
-          3.3. Delete the -sparse.vmdk file.
-        4. Attach the disk to the VM by reconfiguring the same.
-        5. Power on the VM.
-        """
-        LOG.debug(_("---------------vmops spawn method---------------------- "))
-        try:
-            instance_name = instance['name']
-            instance_id = instance['id']
-            instance_node = instance['node']
-            LOG.debug("Instance is provisioned on cluster ---> %s " %
-                      instance_node)
-            instance_memory = instance['memory_mb']
-            instance_vcpus = instance['vcpus']
-            instance_root_gb = instance['root_gb']
-            image_name = image_meta['name']
-            LOG.debug("Instance is provisioned with template ---> %s " % image_name)
-            
-            LOG.debug(_("---------------vmops spawn network_info---------------------- "))
-            LOG.debug(_(" network_info--------->>>>  %s" %network_info))
-            LOG.debug(_(" type of network_info--------->>>>  %s" %type(network_info)))
-            
-            try:
-                for (network, info_dict) in network_info:
-                    mac_add = info_dict['mac']
-                    network_name = info_dict['label']
-                    ips = info_dict['ips']
-                    for ip in ips:
-                        instance_ip = ip['ip']
-                        netmask = ip['netmask']
-                        gateway = ip['gateway']
-            except Exception as e:
-                LOG.debug(" network_info error %s " % str(e))
-
-            MB = 1024 * 1024
-            GB = 1024 * MB
-            
-            LOG.debug(_("---------------vmops spawn parameters---------------------- "))
-            LOG.debug(_(" instance_name--------->>>>  %s" %instance['name']))
-            LOG.debug(_(" instance_id--------->>>>  %s" %instance['id']))
-            LOG.debug(_(" instance_node--------->>>>  %s" %instance['node']))
-            LOG.debug(_(" instance_memory--------->>>>  %s" %instance['memory_mb']))
-            LOG.debug(_(" instance_vcpus--------->>>>  %s" %instance['vcpus']))
-            LOG.debug(_(" instance_root_gb--------->>>>  %s" %instance['root_gb']))
-            LOG.debug(_(" image_name--------->>>>  %s" %image_meta['name']))
-            
-            cluster_name = self._session.clusters.get(instance_node)
-            
-            LOG.debug(_("---------------vmops spawn parameters Template---------------------- "))
-            template_name = self._session.templates.get(image_name)
-            
-            if template_name is None:
-                LOG.debug(_("---------------vmops spawn Template is None---------------------- "))
-                raise Exception(" Template doesn't exists ")
-
-            template_cpus = template_name.cpu.topology.cores
-            template_disks = template_name.disks
-            template_disk1 = template_disks.get(name="Disk 1")
-            template_disk1_size = (template_disk1.get_size()) / GB
-            template_disk2_size = (instance_root_gb - template_disk1_size)
-
-            vm_memory_mb = instance_memory * MB
-            vm_cpu_cores = (instance_vcpus - template_cpus) + 1
-
-            vcpu = params.CPU(topology=params.CpuTopology(
-                cores=vm_cpu_cores, sockets=1))
-            param = params.VM(name=instance_name, cluster=cluster_name,
-                              template=template_name,
-                              memory=vm_memory_mb, cpu=vcpu)
-
-            instance = self._session.vms.add(param)
-
-            instance.nics.add(params.NIC(name='nic', network=params.Network(
-                name=network_name), mac=params.MAC(address=mac_add),
-                interface='Red Hat VirtIO'))
-
-            while self._session.vms.get(instance_name).status.state != 'down':
-                time.sleep(2)
-
-            storagedomains = self._session.storagedomains.list()
-            for storage in storagedomains:
-                if storage.type_ == 'data' and storage.get_master():
-                    storage_name = storage.name
-
-            if template_disk2_size > 0:
-                instance.disks.add(params.Disk(storage_domains=
-                                               params.StorageDomains(
-                                               storage_domain=[self._session.
-                                               storagedomains.get(
-                                               name=storage_name)]),
-                                               size=template_disk2_size * GB,
-                                               type_='data',
-                                               interface='VirtIO',
-                                               format='cow'))
-
-            while self._session.vms.get(instance_name).status.state != 'down':
-                time.sleep(3)
-
-            try:
-                instance.start()
-            except Exception as e:
-                LOG.debug(" VM is not able to start %s " % str(e))
-                instance.delete()
-                raise
-
-            while self._session.vms.get(instance_name).status.state != 'up':
-                time.sleep(3)
-
-            if template_disk2_size > 0:
-                self.attach_disk(instance_ip, template_disk2_size)
-
-            LOG.audit("A new instance:--> %s is being successfully provisioned"
-                      % instance_name)
-        except Exception as e:
-            LOG.audit("== Instance provisioning failed ==== %s" % str(e))
-            raise Exception
-    
     def spawn(self, context, instance, image_meta, network_info,block_device_info=None):
-        LOG.debug(_("---------------vmops spawn method---------------------- "))
-        
+        """ Creates a VM instance in oVirt."""
         try:
-            '''
-            LOG.debug(_("---------------vmops spawn parameters---------------------- "))
-            LOG.debug(_(" instance_name--------->>>>  %s" %instance['name']))
-            LOG.debug(_(" instance_id--------->>>>  %s" %instance['id']))
-            LOG.debug(_(" instance_node--------->>>>  %s" %instance['node']))
-            LOG.debug(_(" instance_memory--------->>>>  %s" %instance['memory_mb']))
-            LOG.debug(_(" instance_vcpus--------->>>>  %s" %instance['vcpus']))
-            LOG.debug(_(" instance_root_gb--------->>>>  %s" %instance['root_gb']))
-            LOG.debug(_(" image_name--------->>>>  %s" %image_meta['name']))
-            LOG.debug(_(" image_id--------->>>>  %s" %image_meta['id']))
-            LOG.debug(_("Type of image_id---------->>>>  %s" %type(image_meta['id'])))
-            
-            LOG.debug(_("Type of context---------->>>>  %s" %type(context)))
-            LOG.debug(_("Type of instance---------->>>>  %s" %type(instance)))
-            for key in instance.keys():
-                LOG.debug(_("Key, Value ---------->>>>  %s : %s" %(key,instance[key])))
-            LOG.debug(_("Type of image_meta---------->>>>  %s" %type(image_meta)))
-            for key in image_meta.keys():
-                LOG.debug(_("Key, Value ---------->>>>  %s : %s" %(key,image_meta[key])))
-            '''    
-            LOG.debug(_("Type of block_device_info---------->>>>  %s" %type(block_device_info)))
-            LOG.debug(_("Type of network_info---------->>>>  %s" %type(network_info)))
-            LOG.debug(_("---------------network_info details---------------------- "))
-                  
             
             try:
                 for i in network_info:
-                    LOG.debug(_("Type of i ---------->>>>  %s" %type(i)))
-                    LOG.debug(_("mac_address ---------->>>>  %s" %i['address']))
-                    LOG.debug(_("network_name ---------->>>>  %s" %i['network']['bridge']))
-                    
                     port_id = i['ovs_interfaceid']
                     mac = i['address']
-                    
-                    LOG.debug(_("id ---------->>>>  %s" %i['id']))
-                    LOG.debug(_("address ---------->>>>  %s" %i['address']))
-                    LOG.debug(_("network ---------->>>>  %s" %i['network']))
-                    LOG.debug(_("type ---------->>>>  %s" %i['type']))
-                    LOG.debug(_("devname ---------->>>>  %s" %i['devname']))
-                    LOG.debug(_("ovs_interfaceid ---------->>>>  %s" %i['ovs_interfaceid']))
-                    
-                    LOG.debug(_("qbh_params ---------->>>>  %s" %i['qbh_params']))
-                    LOG.debug(_("qbg_params ---------->>>>  %s" %i['qbg_params']))
-                    
-                    LOG.debug(_("fixed_ips ---------->>>>  %s" %i.fixed_ips()))
-                    LOG.debug(_("floating_ips ---------->>>>  %s" %i.floating_ips()))
-                    LOG.debug(_("labeled_ips ---------->>>>  %s" %i.labeled_ips()))
-                    
-                    for key in i.keys():
-                        LOG.debug(_("Key, Value ---------->>>>  %s : %s" %(key,i[key])))
-                    
             except Exception as e:
-                #LOG.debug(" network_info error %s " % str(e))
-                LOG.debug(_("network_info error %s" %str(e) ))
-            
-            #data = network_info['data']
-            #target_lun = data['target_lun']
-            #target_iqn = data['target_iqn']
-            #target_portal = data['target_portal']
-            
-            #LOG.debug(_(" target_lun--------->>>>  %s" %target_lun))
-            #LOG.debug(_(" target_iqn--------->>>>  %s" %target_iqn))
-            #LOG.debug(_(" target_portal--------->>>>  %s" %target_portal))
+                LOG.debug(_("network_info error %s" %str(e)))
             
             MB = 1024 * 1024
             GB = 1024 * MB
             
             #name = instance['name']
-            name = instance['display_name'] 
-            memory = instance['memory_mb'] * MB 
+            name = instance['display_name']
             cluster = self._session.clusters.get(instance['node'])
-            tdesc =  image_meta['name'] + " ("+str(image_meta['id'])[0:7]+")"
             
-            template = self._session.templates.get('Blank') 
+            
+            memory = instance['memory_mb'] * MB 
+            
+            template = self._session.templates.get('Blank')
+            
+            tdesc =  image_meta['name'] + " ("+str(image_meta['id'])[0:7]+")"
             for t in self._session.templates.list():
-                LOG.debug(_("tdesc, t.get_description() ---------->>>>  %s : %s" %(tdesc,t.get_description())))
                 if( tdesc == t.get_description()):
                     template = t
              
-            #template = self._session.templates.get('GlanceTemplate-2897d1c') 
             vmType = 'server' 
             
-            #instance_vcpus = instance['vcpus']
-            #template_cpus = template.cpu.topology.cores
-            #vm_cpu_cores = (instance_vcpus - template_cpus) + 1
-            cpuTopology = params.CpuTopology(cores=2, sockets=1) 
+            instance_vcpus = instance['vcpus']
+            template_cpus = template.cpu.topology.cores
+            vm_cpu_cores = (instance_vcpus - template_cpus) + 1
+            LOG.info(_("*******rhevm -vmops ---- spawn--vm_cpu_cores-->>%s" %vm_cpu_cores))
+            
+            cpuTopology = params.CpuTopology(cores=vm_cpu_cores, sockets=1) 
             cpu = params.CPU(topology=cpuTopology) 
             
             ovirtVMParam = params.VM(name=name, 
@@ -350,18 +162,12 @@ class oVirtOps(object):
                                  template=template) 
              
             newVm = self._session.vms.add(ovirtVMParam)
-            LOG.debug(_("---------------vmops spawn - Added New VM---------------------- "))
-            
-            LOG.debug(_("---------------vmops spawn - Delete port---------------------- "))
-            
             
             #stackutils.delete_port(port_id)
-                        
-            LOG.debug(_("---------------vmops spawn - Add port---------------------- "))
-                        
+                                   
             nicName = 'nic-1' 
             macparam = params.MAC(address=mac) 
-            network = self._session.networks.get(name='Net1') # ovirtmgmt
+            network = self._session.networks.get(name='ovirtmgmt') # ovirtmgmt, Net1
             nicInterface = 'virtio' 
             nic = params.NIC(name=nicName, 
                              interface=nicInterface, 
@@ -369,54 +175,58 @@ class oVirtOps(object):
                              network=network) 
             
             newNic = newVm.nics.add(nic) 
-            LOG.debug(_("---------------vmops spawn - Added New NIC---------------------- "))
             
             '''
-            storage = api.storagedomains.get(name='DataNFS') 
-            storageDomain = params.StorageDomains(storage_domain=[storage]) 
-            size = 1 * pow(2, 30) 
-            diskType = 'system' 
-            diskFormat = 'cow' 
-            diskInterface = 'virtio' 
-            sparse = True 
-            bootable = True 
+            instance_root_gb = instance['root_gb']
+            dl = template.disks.list()
+            template_disksize = 0
+            for d in dl:
+                template_disksize += d.get_size()
+                
+            template_diskGB = template_disksize / GB
+            pending_diskGB = (instance_root_gb - template_diskGB)
             
-            disk = params.Disk(storage_domains=storageDomain, 
+            if pending_diskGB > 0:
+                domain = self._engine.storagedomains.get('DataNFS')
+                storageDomain = params.StorageDomains(storage_domain=[domain])
+                #volume_size = volume['size']
+                size = pending_diskGB * pow(2, 30) 
+                diskType = 'data' 
+                diskFormat = 'cow' 
+                diskInterface = 'virtio' 
+                sparse = True 
+                bootable = False
+                vol_name = 'RootDisk'
+                
+                newVm.disks.add(params.Disk(
+                               name=vol_name,
+                               storage_domains=storageDomain,
                                size=size, 
-                               type_=diskType, 
+                               type_=diskType,
                                interface=diskInterface, 
                                format=diskFormat, 
-                               sparse=sparse, 
-                               bootable=bootable) 
-            
-            ovirtDisk = newVm.disks.add(disk)
-            print "Added Disk"
+                               #sparse=FLAGS.ovirt_engine_sparse,
+                               sparse=sparse,
+                               bootable=bootable))
+                
             '''
-            LOG.debug(_("---------------vmops spawn - waiting to status DOWN....---------------------- "))
             while self._session.vms.get(name).status.state != 'down':
                 time.sleep(3)
-            LOG.debug(_("---------------vmops spawn - Ready to Start---------------------- "))
-            
-            LOG.debug(_("---------------vmops spawn - Starting New VM---------------------- "))
             try:
                 newVm.start()
             except Exception as e:
                 #print " ERROR....VM is not able to start : ", str(e)
-                LOG.debug(_("---------------vmops spawn - ERROR....VM is not able to start :---------------------- "))
                 newVm.delete()
                 raise Exception
 
             while self._session.vms.get(name).status.state != 'up':
                 time.sleep(3)
 
-            LOG.audit("A new instance:--> %s is being successfully provisioned" % name)
         except Exception as e:
-            LOG.audit("== Instance provisioning failed ==== %s" % str(e))
             raise Exception
-
+        
     def attach_disk(self, instance, volume):
-        LOG.info(_("*******rhevm -vmops ---- attach_disk--instance-->>%s" %instance))
-        LOG.info(_("*******rhevm -vmops ---- attach_disk--volume-->>%s" %volume))
+        """attach a volume."""
         try:
             vm = self._session.vms.get(name=instance)
             disk = self._session.disks.get(volume)
@@ -427,8 +237,7 @@ class oVirtOps(object):
                LOG.debug(_("disk attach error %s" %str(e) ))
     
     def detach_disk(self, instance, volume):
-        LOG.info(_("*******rhevm -vmops ---- detach_disk--instance-->>%s" %instance))
-        LOG.info(_("*******rhevm -vmops ---- detach_disk--volume-->>%s" %volume))
+        """detach a volume."""
         try:
             vm = self._session.vms.get(name=instance)
             disk = vm.disks.get(name=volume)
@@ -436,37 +245,6 @@ class oVirtOps(object):
             disk.delete(action=detach)
         except Exception as e:
             LOG.debug(_("disk detach error %s" %str(e) ))
-
-    def attach_disk_old(self, instance_ip, template_disk2_size):
-
-        try:
-
-            ip = str(instance_ip)
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(ip, username='root', password='iso*help')
-
-            pvcreate = 'pvcreate /dev/vdb'
-            stdin, stdout, stderr = ssh.exec_command("pvcreate /dev/vdb")
-            # op=stdout.read()
-            stdin, stdout, stderr = ssh.exec_command("vgdisplay")
-            op = stdout.read()
-            vg_name = op.split('\n')[1].split()[2]
-
-            vgextend = 'vgextend ' + vg_name + ' /dev/vdb'
-            stdin, stdout, stderr = ssh.exec_command(vgextend)
-            # op=stdout.read()
-            size = str(template_disk2_size - 0.5) + 'G'
-            lvextend = 'lvextend -L+' + size + \
-                ' /dev/' + vg_name + '/lv_root /dev/vdb'
-            stdin, stdout, stderr = ssh.exec_command(lvextend)
-            # op=stdout.read()
-            resize = 'resize2fs /dev/mapper/' + vg_name + '-lv_root'
-            stdin, stdout, stderr = ssh.exec_command(resize)
-            # op=stdout.read()
-            LOG.debug("Disk added successfully")
-        except Exception as e:
-            LOG.debug("Disk attach failed %s" % str(e))
 
     def reboot(self, instance, network_info):
         """Reboot a VM instance."""
