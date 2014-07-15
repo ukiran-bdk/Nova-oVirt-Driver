@@ -123,9 +123,3 @@ def delete_port(port_id):
     credentials = get_credentials()
     neutron = client.Client(**credentials)
     neutron.delete_port(port_id)
-    print 'Deleted port with ID: ',port_id
-
-#print 'Hello'
-#list_networks()
-#print '---------------------'
-#list_ports()
